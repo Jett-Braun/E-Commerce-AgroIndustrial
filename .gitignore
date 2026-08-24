@@ -1,3 +1,4 @@
+cat > .gitignore << 'EOF'
 # Archivos de Python
 __pycache__/
 *.py[cod]
@@ -53,7 +54,7 @@ desktop.ini
 *.backup
 *.cache
 
-# Render (no necesario pero seguro)
+# Render
 .render/
 
 # Archivos de base de datos
@@ -61,7 +62,7 @@ desktop.ini
 *.dump
 *.backup
 
-# Archivos de modelos (opcional - si quieres subirlos, coméntalos)
+# Archivos de modelos
 # *.pkl
 # *.pickle
 
@@ -79,3 +80,14 @@ dist/
 build/
 *.egg-info/
 *.egg
+
+# ============================================
+# ARCHIVOS DE CONFIGURACIÓN CON CREDENCIALES
+# ============================================
+frontend/config.php
+config.php
+*.env
+*.local.php
+*.secret
+*.key
+EOF

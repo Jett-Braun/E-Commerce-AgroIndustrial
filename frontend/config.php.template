@@ -1,0 +1,120 @@
+<?php
+/**
+ * Archivo de configuración TEMPLATE
+ * Copiar a config.php y agregar credenciales reales
+ * config.php NO debe subirse a GitHub
+ */
+
+// ============================================
+// CONFIGURACIÓN DE BASE DE DATOS
+// ============================================
+
+// Usar variables de entorno (Render) o valores por defecto para desarrollo local
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_NAME', getenv('DB_NAME') ?: 'database');
+define('DB_PORT', getenv('DB_PORT') ?: '3306');
+
+// Verificar que las variables de entorno estén configuradas en producción
+if (getenv('RENDER') && (!getenv('DB_HOST') || !getenv('DB_USER') || !getenv('DB_PASS') || !getenv('DB_NAME'))) {
+    die('Error: Variables de entorno de base de datos no configuradas en Render');
+}
+
+// ============================================
+// ENDPOINTS DE MICROSERVICIOS (APIs)
+// ============================================
+
+// En Render, las URLs se configuran como variables de entorno
+// En desarrollo local, usar URLs locales
+define('API_C1_URL', getenv('API_C1_URL') ?: 'http://localhost:8001');
+define('API_A1_URL', getenv('API_A1_URL') ?: 'http://localhost:8002');
+define('API_M1_URL', getenv('API_M1_URL') ?: 'http://localhost:8003');
+
+// ============================================
+// CONFIGURACIÓN DE APLICACIÓN
+// ============================================
+
+// Timezone
+date_default_timezone_set(getenv('TZ') ?: 'America/Caracas');
+
+// Modo debug (solo para desarrollo)
+define('DEBUG', getenv('DEBUG') === 'true' ? true : false);
+
+// ============================================
+// FUNCIONES DE UTILIDAD
+// ============================================
+
+/**
+ * Obtener conexión a la base de datos
+ * @return mysqli|false
+ */
+function getDbConnection() {
+    $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
+    
+    if ($conn->connect_error) {
+        if (DEBUG) {
+            die("Error de conexión a la base de datos: " . $conn->connect_error);
+        }
+        die("Error de conexión a la base de datos. Contacte al administrador.");
+    }
+    
+    return $conn;
+}
+
+/**
+ * Ejecutar consulta y devolver resultados como array
+ * @param string $sql
+ * @return array|null
+ */
+function queryToArray($sql) {
+    $conn = getDbConnection();
+    $result = $conn->query($sql);
+    
+    if (!$result) {
+        if (DEBUG) {
+            die("Error en consulta SQL: " . $conn->error);
+        }
+        return null;
+    }
+    
+    $data = [];
+    while ($row = $result->fetch_assoc()) {
+        $data[] = $row;
+    }
+    
+    $conn->close();
+    return $data;
+}
+
+/**
+ * Ejecutar consulta INSERT/UPDATE/DELETE
+ * @param string $sql
+ * @return int|false (ID insertado o número de filas afectadas)
+ */
+function executeQuery($sql) {
+    $conn = getDbConnection();
+    
+    if ($conn->query($sql)) {
+        $affected = $conn->affected_rows;
+        $lastId = $conn->insert_id;
+        $conn->close();
+        return $lastId > 0 ? $lastId : $affected;
+    }
+    
+    if (DEBUG) {
+        die("Error al ejecutar consulta: " . $conn->error);
+    }
+    
+    $conn->close();
+    return false;
+}
+
+// ============================================
+// CORS (para desarrollo local)
+// ============================================
+
+if (getenv('RENDER') === null) {
+    // Solo en desarrollo local, permitir CORS
+    header("Access-Control-Allow-Origin: *");
+}
