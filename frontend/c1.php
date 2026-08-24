@@ -1,29 +1,32 @@
 <?php
-require_once 'config.php';
 include 'includes/header.php';
 
 $quote = null;
 $error = null;
 $default_fuel = "0.80";
 
+// 🔥 OBTENER URL DESDE VARIABLES DE ENTORNO
+$api_url = getenv('API_C1_URL');
+if (!$api_url) {
+    // Fallback para desarrollo local
+    $api_url = 'http://localhost:8001';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Definir los datos a enviar
     $payload = json_encode([
         'service_id' => (int)$_POST['service_id'],
         'batch_volume_qq' => (float)$_POST['batch_volume_qq'],
         'fuel_cost_per_liter' => (float)$_POST['fuel_cost_per_liter']
     ]);
 
-    // Usar la URL pública configurada en config.php
-    $url = API_C1_URL . '/api/cafe/quote';
+    $url = $api_url . '/api/cafe/quote';
 
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    // Timeout aumentado para manejar cold start de Render
-    curl_setopt($ch, CURLOPT_TIMEOUT, 60); 
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
     
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -31,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (curl_errno($ch)) {
         $error = 'Error de conexión con la API de Café (C1): ' . curl_error($ch);
     } elseif ($http_code !== 200) {
-        $error = "La API de Café devolvió un error: HTTP $http_code. Verifique los logs de C1 en Render.";
+        $error = "La API de Café devolvió un error: HTTP $http_code. Respuesta: " . htmlspecialchars($response);
     } else {
         $quote = json_decode($response, true);
     }

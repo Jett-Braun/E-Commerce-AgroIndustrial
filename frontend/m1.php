@@ -1,33 +1,37 @@
 <?php
-require_once 'config.php';
 include 'includes/header.php';
 
 $quote = null;
 $error = null;
 
+// 🔥 OBTENER URL DESDE VARIABLES DE ENTORNO
+$api_url = getenv('API_A1_URL');
+if (!$api_url) {
+    // Fallback para desarrollo local
+    $api_url = 'http://localhost:8002';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Claves exactas esperadas por AguacateRequest en a1.py
     $payload = json_encode([
-        'service_id' => (int)$_POST['package_type'],
-        'batch_weight_kg' => (float)$_POST['weight_kg'],
-        'cooling_hours' => 24.0,
-        'electricity_kwh_rate' => 0.15
+        'equipment_type' => (int)$_POST['equipment_type'],
+        'hours_requested' => (float)$_POST['hours_requested'],
+        'fuel_cost_per_liter' => (float)$_POST['fuel_cost_per_liter']
     ]);
 
-    $url = API_M1_URL . '/api/aguacate/quote';
+    $url = $api_url . '/api/maquinaria/quote';
 
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 60); 
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
     
     $response = curl_exec($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     
     if (curl_errno($ch)) {
-        $error = 'Error de conexión con la API de Logística/Aguacate: ' . curl_error($ch);
+        $error = 'Error de conexión con la API de Maquinaria: ' . curl_error($ch);
     } elseif ($http_code !== 200) {
         $error = "La API devolvió HTTP $http_code. Respuesta: " . htmlspecialchars($response);
     } else {
@@ -37,27 +41,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 
-<h3>📦 Servicio de Empaque y Logística de Carga</h3>
+<h3>🚜 Alquiler de Maquinaria y Equipos Agrícolas</h3>
 
 <form method="POST">
-    <label for="package_type">Tipo de Servicio:</label>
-    <select name="package_type" id="package_type">
-        <option value="1" <?= (($_POST['package_type'] ?? '') == '1') ? 'selected' : '' ?>>Pre-enfriado y Almacenamiento en Frío</option>
-        <option value="2" <?= (($_POST['package_type'] ?? '') == '2') ? 'selected' : '' ?>>Clasificación y Empaque de Exportación</option>
+    <label for="equipment_type">Tipo de Maquinaria:</label>
+    <select name="equipment_type" id="equipment_type">
+        <option value="1" <?= (($_POST['equipment_type'] ?? '') == '1') ? 'selected' : '' ?>>Tractor de Oruga / Mantenimiento</option>
+        <option value="2" <?= (($_POST['equipment_type'] ?? '') == '2') ? 'selected' : '' ?>>Generador Diésel / Planta Eléctrica</option>
+        <option value="3" <?= (($_POST['equipment_type'] ?? '') == '3') ? 'selected' : '' ?>>Camión de Carga Pesada (6x6)</option>
     </select>
 
-    <label for="weight_kg">Peso Total de la Carga (Kg):</label>
-    <input type="number" step="1" name="weight_kg" id="weight_kg" 
-           value="<?= htmlspecialchars($_POST['weight_kg'] ?? '500') ?>" required>
+    <label for="hours_requested">Horas de Operación Requeridas:</label>
+    <input type="number" step="0.5" name="hours_requested" id="hours_requested" 
+           value="<?= htmlspecialchars($_POST['hours_requested'] ?? '8.0') ?>" required>
+
+    <label for="fuel_cost_per_liter">Costo de Diésel (USD / Litro):</label>
+    <input type="number" step="0.01" name="fuel_cost_per_liter" id="fuel_cost_per_liter" 
+           value="<?= htmlspecialchars($_POST['fuel_cost_per_liter'] ?? '0.80') ?>" required>
 
     <button type="submit">Calcular Tarifa</button>
 </form>
 
 <?php if ($quote): ?>
     <div class="result-box">
-        <h4>Cotización de Logística (#<?= htmlspecialchars($quote['quote_id'] ?? 'N/A') ?>)</h4>
-        <p>Costo por Kilogramo: <strong>$<?= number_format($quote['unit_price_per_kg_usd'] ?? 0, 3) ?> USD</strong></p>
-        <p>Total Servicio: <strong>$<?= number_format($quote['total_usd'] ?? 0, 2) ?> USD</strong></p>
+        <h4>Cotización de Maquinaria (#<?= htmlspecialchars($quote['quote_id'] ?? 'N/A') ?>)</h4>
+        <p>Costo por Hora: <strong>$<?= number_format($quote['hourly_rate_usd'] ?? 0, 2) ?> USD</strong></p>
+        <p>Total Estimado (<?= htmlspecialchars($quote['hours'] ?? '0') ?> hrs): <strong>$<?= number_format($quote['total_usd'] ?? 0, 2) ?> USD</strong></p>
     </div>
 <?php elseif ($error): ?>
     <div class="error-box" style="color: red; padding: 10px; border: 1px solid red; margin-top: 10px;"><?= $error ?></div>
