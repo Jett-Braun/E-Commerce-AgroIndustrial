@@ -1,0 +1,81 @@
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.pkl
+*.pickle
+
+# Archivos de datos grandes
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.sqlite3
+
+# Variables de entorno y configuraciones
+.env
+.env.local
+.env.*.local
+*.env
+*.env.local
+
+# Archivos de logs
+*.log
+logs/
+*.log.*
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos temporales
+*.tmp
+*.temp
+*.bak
+*.backup
+*.cache
+
+# Render (no necesario pero seguro)
+.render/
+
+# Archivos de base de datos
+*.sql
+*.dump
+*.backup
+
+# Archivos de modelos (opcional - si quieres subirlos, coméntalos)
+# *.pkl
+# *.pickle
+
+# Archivos de dependencias
+package-lock.json
+yarn.lock
+composer.lock
+
+# Archivos de cobertura
+.coverage
+htmlcov/
+
+# Archivos de distribución
+dist/
+build/
+*.egg-info/
+*.egg
