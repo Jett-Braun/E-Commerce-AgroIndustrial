@@ -240,3 +240,12 @@ async def quote_maquinaria(data: MaquinariaRequest):
         "total_usd": total,
         "hours": data.hours_requested
     }
+
+@app.get("/")
+async def root():
+    return {
+        "service": app.title,
+        "status": "online",
+        "health_check": "/health",
+        "documentation": "/docs"
+    }

@@ -240,3 +240,12 @@ async def quote_cafe(data: CafeRequest):
         "total_usd": total,
         "volume_qq": data.batch_volume_qq
     }
+
+@app.get("/")
+async def root():
+    return {
+        "service": app.title,
+        "status": "online",
+        "health_check": "/health",
+        "documentation": "/docs"
+    }
