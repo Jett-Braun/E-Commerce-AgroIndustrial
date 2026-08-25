@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sklearn.linear_model import LinearRegression
+from supabase import create_client, Client
 import time
 
 app = FastAPI(title="Microservicio - Maquinaria AI (M1)")
@@ -19,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔥 CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
+# Configuración desde Variables de Entorno (Render)
 MYSQL_CONFIG = {
     "host": os.getenv("DB_HOST", "bxcyjzl01ttmj7sbirum-mysql.services.clever-cloud.com"),
     "port": int(os.getenv("DB_PORT", 3306)),
@@ -31,6 +32,11 @@ MYSQL_CONFIG = {
     "autocommit": True
 }
 
+# Configuración de Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "modelos-privados")
+
 MODEL_FILE = "model_maquinaria.pkl"
 DATASET_FILE = "dataset.csv"
 model = None
@@ -41,8 +47,50 @@ class MaquinariaRequest(BaseModel):
     hours_requested: float
     fuel_cost_per_liter: float
 
+
+def get_supabase_client() -> Client:
+    """Inicializa el cliente de Supabase usando credenciales de variables de entorno."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise ValueError("Las variables de entorno SUPABASE_URL y SUPABASE_SERVICE_KEY deben estar configuradas.")
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+
+def download_model_from_supabase() -> bool:
+    """Intenta descargar el archivo PKL del modelo de maquinaria desde Supabase."""
+    try:
+        supabase = get_supabase_client()
+        data = supabase.storage.from_(SUPABASE_BUCKET).download(MODEL_FILE)
+        with open(MODEL_FILE, "wb") as f:
+            f.write(data)
+        print("📥 [Maquinaria] Modelo PKL descargado exitosamente desde Supabase.")
+        return True
+    except Exception as e:
+        print(f"ℹ️ [Maquinaria] No se pudo descargar el modelo PKL ({e}). Se procederá a entrenar.")
+        return False
+
+
+def upload_model_to_supabase() -> bool:
+    """Sube o actualiza el archivo PKL del modelo de maquinaria en Supabase."""
+    try:
+        supabase = get_supabase_client()
+        with open(MODEL_FILE, "rb") as f:
+            file_data = f.read()
+        
+        # Upsert=True sobreescribe el archivo si ya existe en el bucket
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            file=file_data,
+            path=MODEL_FILE,
+            file_options={"cache-control": "3600", "upsert": "true"}
+        )
+        print("📤 [Maquinaria] Modelo PKL subido/actualizado exitosamente en Supabase.")
+        return True
+    except Exception as e:
+        print(f"❌ [Maquinaria] Error crítico al subir el modelo PKL a Supabase: {e}")
+        return False
+
+
 def get_db_connection():
-    """Obtiene conexión a MySQL con reintentos"""
+    """Obtiene conexión a MySQL con reintentos."""
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -55,39 +103,76 @@ def get_db_connection():
             else:
                 raise HTTPException(status_code=500, detail=f"Error de conexión a DB: {str(e)}")
 
+
 def load_or_train_model():
     global model
-    try:
-        if os.path.exists(MODEL_FILE):
+    
+    # 1. Intentar cargar el PKL local o descargarlo desde Supabase
+    if not os.path.exists(MODEL_FILE):
+        download_model_from_supabase()
+
+    if os.path.exists(MODEL_FILE):
+        try:
             with open(MODEL_FILE, "rb") as f:
                 model = pickle.load(f)
             print("📦 [Maquinaria] Modelo cargado desde pickle exitosamente.")
-        else:
-            raise FileNotFoundError("Archivo PKL no encontrado, iniciando entrenamiento dinámico.")
-    except Exception as e:
-        print(f"⚠️ [Maquinaria] Error al cargar PKL ({e}). Intentando entrenar desde {DATASET_FILE}...")
-        try:
-            if not os.path.exists(DATASET_FILE):
-                records = [{"equipment_type": 1, "hours_requested": 8.0, "fuel_cost_per_liter": 0.8, "mantenimiento_factor": 1.55, "price": 45.0}]
-                data_df = pd.DataFrame(records)
-            else:
-                data_df = pd.read_csv(DATASET_FILE)
+            return
+        except Exception as e:
+            print(f"⚠️ [Maquinaria] El archivo PKL local está corrupto o falló al leerse ({e}). Re-entrenando...")
 
-            X = data_df[["equipment_type", "hours_requested", "fuel_cost_per_liter", "mantenimiento_factor"]]
-            y = data_df["price"] if "price" in data_df.columns else np.random.uniform(30, 80, len(data_df))
+    # 2. Entrenar usando estrictamente el CSV sin registros sintéticos
+    print(f"⚙️ [Maquinaria] Iniciando entrenamiento utilizando {DATASET_FILE}...")
+    if not os.path.exists(DATASET_FILE):
+        error_msg = f"No se encontró el archivo obligatorio '{DATASET_FILE}'. Carga el archivo al proyecto para entrenar el modelo."
+        print(f"❌ [Maquinaria] {error_msg}")
+        model = None
+        return
 
-            model = LinearRegression()
-            model.fit(X, y)
+    try:
+        data_df = pd.read_csv(DATASET_FILE)
+        
+        required_features = ["equipment_type", "hours_requested", "fuel_cost_per_liter", "mantenimiento_factor"]
+        target_col = "price"
 
-            with open(MODEL_FILE, "wb") as f:
-                pickle.dump(model, f)
-            print("✅ [Maquinaria] Modelo entrenado y guardado en PKL.")
-        except Exception as train_error:
-            print(f"❌ [Maquinaria] Fallo crítico durante el entrenamiento: {train_error}")
-            model = None
+        # Validación estricta de columnas requeridas
+        missing_features = [col for col in required_features if col not in data_df.columns]
+        if missing_features:
+            raise ValueError(f"Faltan columnas requeridas en el CSV: {missing_features}")
+        if target_col not in data_df.columns:
+            raise ValueError(f"Falta la columna objetivo '{target_col}' en el CSV.")
+
+        X = data_df[required_features]
+        y = data_df[target_col]
+
+        # Entrenamiento
+        new_model = LinearRegression()
+        new_model.fit(X, y)
+
+        # Serialización local
+        with open(MODEL_FILE, "wb") as f:
+            pickle.dump(new_model, f)
+        
+        model = new_model
+        print("✅ [Maquinaria] Modelo entrenado localmente con éxito.")
+
+        # Subida al almacenamiento privado en Supabase
+        upload_model_to_supabase()
+
+    except Exception as train_error:
+        print(f"❌ [Maquinaria] Fallo crítico durante el procesamiento/entrenamiento del CSV: {train_error}")
+        model = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Ejecuta la carga o entrenamiento del modelo al inicializar el servidor."""
+    load_or_train_model()
+
 
 @app.get("/health")
 async def health_check():
+    db_status = "disconnected"
+    db_error = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -95,16 +180,28 @@ async def health_check():
         result = cursor.fetchone()
         cursor.close()
         conn.close()
-        return {"status": "healthy", "database": "connected", "result": result[0]}
+        db_status = "connected"
     except Exception as e:
-        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+        db_error = str(e)
 
-load_or_train_model()
+    model_ready = model is not None
+    status_code = "healthy" if db_status == "connected" and model_ready else "degraded"
+
+    return {
+        "status": status_code,
+        "database": db_status,
+        "model_loaded": model_ready,
+        "db_error": db_error
+    }
+
 
 @app.post("/api/maquinaria/quote")
 async def quote_maquinaria(data: MaquinariaRequest):
     if model is None:
-        raise HTTPException(status_code=500, detail="El modelo de IA de Maquinaria no está disponible.")
+        raise HTTPException(
+            status_code=503, 
+            detail="El servicio no está disponible: El modelo IA no está cargado ni pudo entrenarse. Revisa la presencia de dataset.csv."
+        )
 
     try:
         input_df = pd.DataFrame([{
@@ -119,7 +216,7 @@ async def quote_maquinaria(data: MaquinariaRequest):
         total = round(hourly_rate * data.hours_requested, 2)
     except Exception as e:
         print(f"❌ [Maquinaria] Error en inferencia de IA: {e}")
-        raise HTTPException(status_code=500, detail=f"Error al procesar la predicción: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al procesar la predicción del modelo: {str(e)}")
 
     quote_id = 0
     try:
@@ -135,7 +232,7 @@ async def quote_maquinaria(data: MaquinariaRequest):
         conn.close()
         print(f"✅ [Maquinaria] Cotización guardada en DB: ID={quote_id}")
     except Exception as db_err:
-        print(f"⚠️ [Maquinaria] Advertencia: No se pudo guardar en MySQL ({db_err})")
+        print(f"⚠️ [Maquinaria] Advertencia: No se pudo registrar la cotización en MySQL ({db_err})")
 
     return {
         "quote_id": quote_id,
