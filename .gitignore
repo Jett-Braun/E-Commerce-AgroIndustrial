@@ -91,3 +91,8 @@ config.php
 *.secret
 *.key
 EOF
+
+!a1/dataset.csv
+!c1/dataset.csv
+!m1/dataset.csv
+EOF
