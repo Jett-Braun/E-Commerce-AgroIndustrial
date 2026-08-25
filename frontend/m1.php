@@ -4,14 +4,11 @@ include 'includes/header.php';
 $quote = null;
 $error = null;
 
-// 🔥 OBTENER URL DESDE VARIABLES DE ENTORNO
-$api_url = getenv('API_A1_URL');
-if (!$api_url) {
-    // Fallback para desarrollo local
-    $api_url = 'http://localhost:8002';
-}
+// URL apuntando a la API M1
+$api_url = getenv('API_M1_URL') ?: 'http://localhost:8003';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Payload con los nombres exactos que espera el modelo Pydantic de M1
     $payload = json_encode([
         'equipment_type' => (int)$_POST['equipment_type'],
         'hours_requested' => (float)$_POST['hours_requested'],
@@ -59,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <input type="number" step="0.01" name="fuel_cost_per_liter" id="fuel_cost_per_liter" 
            value="<?= htmlspecialchars($_POST['fuel_cost_per_liter'] ?? '0.80') ?>" required>
 
-    <button type="submit">Calcular Tarifa</button>
+    <button type="submit">Calcular Tarifa con IA (M1)</button>
 </form>
 
 <?php if ($quote): ?>

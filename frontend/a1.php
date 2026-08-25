@@ -4,14 +4,11 @@ include 'includes/header.php';
 $quote = null;
 $error = null;
 
-// 🔥 OBTENER URL DESDE VARIABLES DE ENTORNO
-$api_url = getenv('API_M1_URL');
-if (!$api_url) {
-    // Fallback para desarrollo local
-    $api_url = 'http://localhost:8003';
-}
+// URL apuntando a la API A1
+$api_url = getenv('API_A1_URL') ?: 'http://localhost:8002';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Payload con los nombres exactos que espera el modelo Pydantic de A1
     $payload = json_encode([
         'service_id' => (int)$_POST['package_type'],
         'batch_weight_kg' => (float)$_POST['weight_kg'],
@@ -42,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 
-<h3>📦 Servicio de Empaque y Logística de Carga</h3>
+<h3>📦 Servicio de Empaque y Logística de Carga (Aguacate)</h3>
 
 <form method="POST">
     <label for="package_type">Tipo de Servicio:</label>

@@ -243,7 +243,7 @@ async def quote_aguacate(data: AguacateRequest):
         "weight_kg": data.batch_weight_kg
     }
 
-    @app.get("/")
+@app.get("/")
 async def root():
     return {
         "service": app.title,
