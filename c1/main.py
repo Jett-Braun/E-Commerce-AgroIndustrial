@@ -10,6 +10,12 @@ from pydantic import BaseModel
 from sklearn.linear_model import LinearRegression
 from supabase import create_client, Client
 import time
+from pathlib import Path
+
+# RUTA ABSOLUTA BASE (Soluciona el error de lectura del CSV en Render)
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_FILE = BASE_DIR / "model_cafe.pkl"
+DATASET_FILE = BASE_DIR / "dataset.csv"
 
 app = FastAPI(title="Microservicio - Café AI (C1)")
 
@@ -37,8 +43,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "modelos-privados")
 
-MODEL_FILE = "model_cafe.pkl"
-DATASET_FILE = "dataset.csv"
 model = None
 latest_maint_factor = 1.55
 
@@ -59,7 +63,7 @@ def download_model_from_supabase() -> bool:
     """Intenta descargar el archivo PKL del modelo de café desde Supabase."""
     try:
         supabase = get_supabase_client()
-        data = supabase.storage.from_(SUPABASE_BUCKET).download(MODEL_FILE)
+        data = supabase.storage.from_(SUPABASE_BUCKET).download("model_cafe.pkl")
         with open(MODEL_FILE, "wb") as f:
             f.write(data)
         print("📥 [Café] Modelo PKL descargado exitosamente desde Supabase.")
@@ -76,10 +80,9 @@ def upload_model_to_supabase() -> bool:
         with open(MODEL_FILE, "rb") as f:
             file_data = f.read()
         
-        # Upsert=True sobreescribe el archivo si ya existe en el bucket
         supabase.storage.from_(SUPABASE_BUCKET).upload(
             file=file_data,
-            path=MODEL_FILE,
+            path="model_cafe.pkl",
             file_options={"cache-control": "3600", "upsert": "true"}
         )
         print("📤 [Café] Modelo PKL subido/actualizado exitosamente en Supabase.")
@@ -108,10 +111,10 @@ def load_or_train_model():
     global model
     
     # 1. Intentar cargar el PKL local o descargarlo desde Supabase
-    if not os.path.exists(MODEL_FILE):
+    if not MODEL_FILE.exists():
         download_model_from_supabase()
 
-    if os.path.exists(MODEL_FILE):
+    if MODEL_FILE.exists():
         try:
             with open(MODEL_FILE, "rb") as f:
                 model = pickle.load(f)
@@ -120,10 +123,10 @@ def load_or_train_model():
         except Exception as e:
             print(f"⚠️ [Café] El archivo PKL local está corrupto o falló al leerse ({e}). Re-entrenando...")
 
-    # 2. Entrenar usando estrictamente el CSV sin crear registros por defecto
+    # 2. Entrenar usando la ruta absoluta del CSV
     print(f"⚙️ [Café] Iniciando entrenamiento utilizando {DATASET_FILE}...")
-    if not os.path.exists(DATASET_FILE):
-        error_msg = f"No se encontró el archivo obligatorio '{DATASET_FILE}'. Carga el archivo al proyecto para entrenar el modelo."
+    if not DATASET_FILE.exists():
+        error_msg = f"No se encontró el archivo obligatorio '{DATASET_FILE}'."
         print(f"❌ [Café] {error_msg}")
         model = None
         return
@@ -134,7 +137,6 @@ def load_or_train_model():
         required_features = ["service_id", "batch_volume_qq", "fuel_cost_per_liter", "mantenimiento_factor"]
         target_col = "price"
 
-        # Validación estricta de columnas requeridas
         missing_features = [col for col in required_features if col not in data_df.columns]
         if missing_features:
             raise ValueError(f"Faltan columnas requeridas en el CSV: {missing_features}")
@@ -144,18 +146,15 @@ def load_or_train_model():
         X = data_df[required_features]
         y = data_df[target_col]
 
-        # Entrenamiento
         new_model = LinearRegression()
         new_model.fit(X, y)
 
-        # Serialización local
         with open(MODEL_FILE, "wb") as f:
             pickle.dump(new_model, f)
         
         model = new_model
         print("✅ [Café] Modelo entrenado localmente con éxito.")
 
-        # Subida al almacenamiento privado en Supabase
         upload_model_to_supabase()
 
     except Exception as train_error:
@@ -169,6 +168,16 @@ async def startup_event():
     load_or_train_model()
 
 
+@app.get("/")
+async def root():
+    return {
+        "service": app.title,
+        "status": "online",
+        "health_check": "/health",
+        "documentation": "/docs"
+    }
+
+
 @app.get("/health")
 async def health_check():
     db_status = "disconnected"
@@ -177,7 +186,7 @@ async def health_check():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
-        result = cursor.fetchone()
+        cursor.fetchone()
         cursor.close()
         conn.close()
         db_status = "connected"
@@ -239,13 +248,4 @@ async def quote_cafe(data: CafeRequest):
         "unit_price_usd": unit_price,
         "total_usd": total,
         "volume_qq": data.batch_volume_qq
-    }
-
-@app.get("/")
-async def root():
-    return {
-        "service": app.title,
-        "status": "online",
-        "health_check": "/health",
-        "documentation": "/docs"
     }
