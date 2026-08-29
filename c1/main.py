@@ -586,6 +586,63 @@ async def retrain_model():
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error inesperado: {str(e)}")
+@app.get("/debug/raw-csv")
+async def debug_raw_csv():
+    """Muestra el contenido REAL del CSV que está en Render"""
+    import pandas as pd
+    
+    if not DATASET_FILE.exists():
+        return {
+            "error": f"El archivo {DATASET_FILE} NO existe",
+            "base_dir": str(BASE_DIR),
+            "files_in_base_dir": [str(f.name) for f in BASE_DIR.iterdir() if f.is_file()]
+        }
+    
+    try:
+        # Leer el archivo directamente
+        with open(DATASET_FILE, 'r') as f:
+            first_lines = f.readlines()[:10]
+        
+        # Intentar leer con pandas
+        try:
+            data = pd.read_csv(DATASET_FILE)
+            columns = list(data.columns)
+            rows = len(data)
+            
+            # Verificar valores en fuel_cost_per_liter
+            fuel_col = 'fuel_cost_per_liter'
+            if fuel_col in columns:
+                min_val = data[fuel_col].min()
+                max_val = data[fuel_col].max()
+                zeros = (data[fuel_col] <= 0).sum()
+            else:
+                min_val = None
+                max_val = None
+                zeros = None
+                
+        except Exception as e:
+            columns = None
+            rows = None
+            min_val = None
+            max_val = None
+            zeros = None
+        
+        return {
+            "file_exists": True,
+            "file_size": DATASET_FILE.stat().st_size,
+            "first_lines": first_lines,
+            "columns": columns,
+            "rows": rows,
+            "fuel_cost_per_liter": {
+                "min": min_val,
+                "max": max_val,
+                "zeros": zeros
+            },
+            "path": str(DATASET_FILE)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 
 # ============================================
 # INICIALIZACIÓN
